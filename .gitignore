@@ -148,3 +148,6 @@ Thumbs.db
 # Secrets
 secrets.json
 config/secrets.json
+
+# Project specific
+folders.json
