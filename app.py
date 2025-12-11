@@ -657,27 +657,16 @@ HTML_TEMPLATE = """
                                 </div>
                                 <!-- Viewer Connection -->
                                 <div class="vm-info-section viewer-section" style="{% if vm.status != 'Started' %}display: none;{% endif %}">
-                                    <div class="info-label"><i class="fas fa-plug me-1"></i>Conectar (Navegador)</div>
+                                    <div class="info-label"><i class="fas fa-plug me-1"></i>Conectar</div>
                                     <div class="info-value">
                                         <div class="btn-group" role="group">
-                                            <a href="{{ url_for('get_viewer', vm_id=vm.id, viewer_type='browser-vnc') }}" class="btn btn-sm btn-outline-info spice-btn" target="_blank" title="Abrir VNC en navegador">
-                                                <i class="fas fa-globe me-1"></i>VNC
-                                            </a>
-                                            <a href="{{ url_for('get_viewer', vm_id=vm.id, viewer_type='browser-spice') }}" class="btn btn-sm btn-outline-warning spice-btn" target="_blank" title="Abrir SPICE en navegador">
-                                                <i class="fas fa-globe me-1"></i>SPICE
-                                            </a>
-                                            <a href="{{ url_for('get_viewer', vm_id=vm.id, viewer_type='browser-rdp') }}" class="btn btn-sm btn-outline-success spice-btn" target="_blank" title="RDP en navegador">
-                                                <i class="fas fa-globe me-1"></i>RDP
-                                            </a>
-                                        </div>
-                                    </div>
-                                    <div class="info-label mt-2"><i class="fas fa-download me-1"></i>Descargar Cliente</div>
-                                    <div class="info-value">
-                                        <div class="btn-group" role="group">
+                                            <button onclick="openViewer('{{ vm.id }}', '{{ vm.name }}')" class="btn btn-sm btn-info spice-btn" title="Abrir VNC en navegador">
+                                                <i class="fas fa-desktop me-1"></i>Navegador
+                                            </button>
                                             <a href="{{ url_for('get_viewer', vm_id=vm.id, viewer_type='file-spice') }}" class="btn btn-sm btn-warning spice-btn" title="Descargar archivo .vv para virt-viewer">
                                                 <i class="fas fa-download me-1"></i>SPICE
                                             </a>
-                                            <a href="{{ url_for('get_viewer', vm_id=vm.id, viewer_type='file-rdpgw') }}" class="btn btn-sm btn-success spice-btn" title="Descargar archivo .rdp con Gateway">
+                                            <a href="{{ url_for('get_viewer', vm_id=vm.id, viewer_type='file-rdpgw') }}" class="btn btn-sm btn-success spice-btn" title="Descargar archivo .rdp">
                                                 <i class="fas fa-download me-1"></i>RDP
                                             </a>
                                         </div>
@@ -785,27 +774,16 @@ HTML_TEMPLATE = """
                                 </div>
                                 <!-- Viewer Connection -->
                                 <div class="vm-info-section viewer-section" style="{% if vm.status != 'Started' %}display: none;{% endif %}">
-                                    <div class="info-label"><i class="fas fa-plug me-1"></i>Conectar (Navegador)</div>
+                                    <div class="info-label"><i class="fas fa-plug me-1"></i>Conectar</div>
                                     <div class="info-value">
                                         <div class="btn-group" role="group">
-                                            <a href="{{ url_for('get_viewer', vm_id=vm.id, viewer_type='browser-vnc') }}" class="btn btn-sm btn-outline-info spice-btn" target="_blank" title="Abrir VNC en navegador">
-                                                <i class="fas fa-globe me-1"></i>VNC
-                                            </a>
-                                            <a href="{{ url_for('get_viewer', vm_id=vm.id, viewer_type='browser-spice') }}" class="btn btn-sm btn-outline-warning spice-btn" target="_blank" title="Abrir SPICE en navegador">
-                                                <i class="fas fa-globe me-1"></i>SPICE
-                                            </a>
-                                            <a href="{{ url_for('get_viewer', vm_id=vm.id, viewer_type='browser-rdp') }}" class="btn btn-sm btn-outline-success spice-btn" target="_blank" title="RDP en navegador">
-                                                <i class="fas fa-globe me-1"></i>RDP
-                                            </a>
-                                        </div>
-                                    </div>
-                                    <div class="info-label mt-2"><i class="fas fa-download me-1"></i>Descargar Cliente</div>
-                                    <div class="info-value">
-                                        <div class="btn-group" role="group">
+                                            <button onclick="openViewer('{{ vm.id }}', '{{ vm.name }}')" class="btn btn-sm btn-info spice-btn" title="Abrir VNC en navegador">
+                                                <i class="fas fa-desktop me-1"></i>Navegador
+                                            </button>
                                             <a href="{{ url_for('get_viewer', vm_id=vm.id, viewer_type='file-spice') }}" class="btn btn-sm btn-warning spice-btn" title="Descargar archivo .vv para virt-viewer">
                                                 <i class="fas fa-download me-1"></i>SPICE
                                             </a>
-                                            <a href="{{ url_for('get_viewer', vm_id=vm.id, viewer_type='file-rdpgw') }}" class="btn btn-sm btn-success spice-btn" title="Descargar archivo .rdp con Gateway">
+                                            <a href="{{ url_for('get_viewer', vm_id=vm.id, viewer_type='file-rdpgw') }}" class="btn btn-sm btn-success spice-btn" title="Descargar archivo .rdp">
                                                 <i class="fas fa-download me-1"></i>RDP
                                             </a>
                                         </div>
@@ -873,6 +851,12 @@ HTML_TEMPLATE = """
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
     <script>
+        // Open VNC viewer - redirects through our server which sets the cookie
+        function openViewer(vmId, vmName) {
+            // Open via our redirect endpoint which will handle the cookie
+            window.open(`/viewer/${vmId}/browser-vnc`, '_blank');
+        }
+
         // Auto-refresh functionality with AJAX (no page reload)
         let autoRefreshInterval = null;
         const REFRESH_INTERVAL = 5000; // 5 seconds
@@ -1170,7 +1154,82 @@ def get_viewer(vm_id, viewer_type="browser-vnc"):
         # Handle our structured response
         if isinstance(viewer_data, dict):
             if viewer_data.get("type") == "url":
-                return redirect(viewer_data["url"])
+                # For browser-vnc, we need to handle the cookie for WebSocket auth
+                if viewer_type == "browser-vnc":
+                    url = viewer_data["url"]
+                    # Get the cookie from the API response (it's in the raw response)
+                    # We'll fetch again to get the cookie
+                    try:
+                        api_url = f"{API_BASE_URL}/desktop/{vm_id}/viewer/{viewer_type}"
+                        response = requests.get(api_url, headers=API_HEADERS)
+                        data = response.json()
+                        cookie_value = data.get("cookie", "")
+                        
+                        if cookie_value:
+                            # Create an HTML page that sets the cookie and redirects
+                            # The cookie must be set on cloud.uni.eus domain
+                            html = f'''<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>Conectando al visor VNC...</title>
+    <style>
+        body {{
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            margin: 0;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+        }}
+        .container {{
+            text-align: center;
+            background: rgba(255,255,255,0.1);
+            padding: 40px;
+            border-radius: 15px;
+        }}
+        .spinner {{
+            border: 4px solid rgba(255,255,255,0.3);
+            border-radius: 50%;
+            border-top: 4px solid white;
+            width: 50px;
+            height: 50px;
+            animation: spin 1s linear infinite;
+            margin: 20px auto;
+        }}
+        @keyframes spin {{
+            0% {{ transform: rotate(0deg); }}
+            100% {{ transform: rotate(360deg); }}
+        }}
+        a {{
+            color: white;
+            text-decoration: underline;
+        }}
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h2>Conectando al escritorio VNC...</h2>
+        <div class="spinner"></div>
+        <p>Si no se abre automáticamente, <a href="{url}" id="manual-link">haz clic aquí</a></p>
+    </div>
+    <script>
+        // Redirect immediately to the VNC viewer
+        // The cookie is set by the IsardVDI API when we make the request
+        window.location.href = "{url}";
+    </script>
+</body>
+</html>'''
+                            return Response(html, mimetype='text/html')
+                    except Exception as e:
+                        print(f"Error getting cookie: {e}")
+                    
+                    # Fallback: just redirect
+                    return redirect(url)
+                else:
+                    return redirect(viewer_data["url"])
             elif viewer_data.get("type") == "rdp_file":
                 filename = viewer_data.get("filename", f"desktop-{vm_id}.rdp")
                 mime = viewer_data.get("mime", "application/x-rdp")
