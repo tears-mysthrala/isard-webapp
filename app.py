@@ -656,19 +656,11 @@ HTML_TEMPLATE = """
                                     </div>
                                 </div>
                                 <!-- Viewer Connection -->
-                                <div class="vm-info-section viewer-section" style="{% if vm.status != 'Started' %}display: none;{% endif %}">
+                                <div class="vm-info-section viewer-section" style="{% if vm.status != 'Started' %}display: none;{% endif %}" data-vm-id="{{ vm.id }}" data-vm-name="{{ vm.name }}">
                                     <div class="info-label"><i class="fas fa-plug me-1"></i>Conectar</div>
                                     <div class="info-value">
-                                        <div class="btn-group" role="group">
-                                            <button onclick="openViewer('{{ vm.id }}', '{{ vm.name }}')" class="btn btn-sm btn-info spice-btn" title="Abrir VNC en navegador">
-                                                <i class="fas fa-desktop me-1"></i>Navegador
-                                            </button>
-                                            <a href="{{ url_for('get_viewer', vm_id=vm.id, viewer_type='file-spice') }}" class="btn btn-sm btn-warning spice-btn" title="Descargar archivo .vv para virt-viewer">
-                                                <i class="fas fa-download me-1"></i>SPICE
-                                            </a>
-                                            <a href="{{ url_for('get_viewer', vm_id=vm.id, viewer_type='file-rdpgw') }}" class="btn btn-sm btn-success spice-btn" title="Descargar archivo .rdp">
-                                                <i class="fas fa-download me-1"></i>RDP
-                                            </a>
+                                        <div class="btn-group viewer-buttons" role="group">
+                                            <span class="text-muted"><i class="fas fa-spinner fa-spin me-1"></i>Cargando...</span>
                                         </div>
                                     </div>
                                 </div>
@@ -773,19 +765,11 @@ HTML_TEMPLATE = """
                                     </div>
                                 </div>
                                 <!-- Viewer Connection -->
-                                <div class="vm-info-section viewer-section" style="{% if vm.status != 'Started' %}display: none;{% endif %}">
+                                <div class="vm-info-section viewer-section" style="{% if vm.status != 'Started' %}display: none;{% endif %}" data-vm-id="{{ vm.id }}" data-vm-name="{{ vm.name }}">
                                     <div class="info-label"><i class="fas fa-plug me-1"></i>Conectar</div>
                                     <div class="info-value">
-                                        <div class="btn-group" role="group">
-                                            <button onclick="openViewer('{{ vm.id }}', '{{ vm.name }}')" class="btn btn-sm btn-info spice-btn" title="Abrir VNC en navegador">
-                                                <i class="fas fa-desktop me-1"></i>Navegador
-                                            </button>
-                                            <a href="{{ url_for('get_viewer', vm_id=vm.id, viewer_type='file-spice') }}" class="btn btn-sm btn-warning spice-btn" title="Descargar archivo .vv para virt-viewer">
-                                                <i class="fas fa-download me-1"></i>SPICE
-                                            </a>
-                                            <a href="{{ url_for('get_viewer', vm_id=vm.id, viewer_type='file-rdpgw') }}" class="btn btn-sm btn-success spice-btn" title="Descargar archivo .rdp">
-                                                <i class="fas fa-download me-1"></i>RDP
-                                            </a>
+                                        <div class="btn-group viewer-buttons" role="group">
+                                            <span class="text-muted"><i class="fas fa-spinner fa-spin me-1"></i>Cargando...</span>
                                         </div>
                                     </div>
                                 </div>
@@ -856,6 +840,61 @@ HTML_TEMPLATE = """
             // Open via our redirect endpoint which will handle the cookie
             window.open(`/viewer/${vmId}/browser-vnc`, '_blank');
         }
+        
+        // Load available viewers for a VM
+        async function loadViewerButtons(viewerSection) {
+            const vmId = viewerSection.dataset.vmId;
+            const vmName = viewerSection.dataset.vmName;
+            const btnGroup = viewerSection.querySelector('.viewer-buttons');
+            
+            if (!vmId || !btnGroup) return;
+            
+            try {
+                const response = await fetch(`/api/viewers/${vmId}`);
+                const data = await response.json();
+                
+                let buttons = [];
+                
+                if (data.vnc) {
+                    buttons.push(`<button onclick="openViewer('${vmId}', '${vmName}')" class="btn btn-sm btn-info spice-btn" title="Abrir VNC en navegador">
+                        <i class="fas fa-desktop me-1"></i>Navegador
+                    </button>`);
+                }
+                
+                if (data.spice) {
+                    buttons.push(`<a href="/viewer/${vmId}/file-spice" class="btn btn-sm btn-warning spice-btn" title="Descargar archivo .vv para virt-viewer">
+                        <i class="fas fa-download me-1"></i>SPICE
+                    </a>`);
+                }
+                
+                if (data.rdp) {
+                    buttons.push(`<a href="/viewer/${vmId}/file-rdpgw" class="btn btn-sm btn-success spice-btn" title="Descargar archivo .rdp">
+                        <i class="fas fa-download me-1"></i>RDP
+                    </a>`);
+                }
+                
+                if (buttons.length > 0) {
+                    btnGroup.innerHTML = buttons.join('');
+                } else {
+                    btnGroup.innerHTML = '<span class="text-muted">No hay visores disponibles</span>';
+                }
+            } catch (error) {
+                console.error('Error loading viewers:', error);
+                btnGroup.innerHTML = '<span class="text-muted">Error al cargar</span>';
+            }
+        }
+        
+        // Load viewers for all visible started VMs on page load
+        function loadAllViewers() {
+            document.querySelectorAll('.viewer-section').forEach(section => {
+                if (section.style.display !== 'none') {
+                    loadViewerButtons(section);
+                }
+            });
+        }
+        
+        // Load viewers on page load
+        document.addEventListener('DOMContentLoaded', loadAllViewers);
 
         // Auto-refresh functionality with AJAX (no page reload)
         let autoRefreshInterval = null;
@@ -899,10 +938,16 @@ HTML_TEMPLATE = """
                     }
                 }
                 
-                // Update viewer section visibility
+                // Update viewer section visibility and reload buttons if becoming visible
                 const viewerSection = card.querySelector('.viewer-section');
                 if (viewerSection) {
+                    const wasHidden = viewerSection.style.display === 'none';
                     viewerSection.style.display = vmData.status === 'Started' ? 'block' : 'none';
+                    
+                    // If VM just started, reload the viewer buttons
+                    if (wasHidden && vmData.status === 'Started') {
+                        loadViewerButtons(viewerSection);
+                    }
                 }
                 
                 // Update action button
@@ -1119,6 +1164,51 @@ def api_get_vms():
         "folders": folders_data,
         "unassigned": unassigned
     })
+
+
+@app.route("/api/viewers/<vm_id>")
+def api_get_viewers(vm_id):
+    """API endpoint para verificar qué viewers están disponibles para una VM."""
+    viewers = {
+        "vnc": False,
+        "spice": False,
+        "rdp": False
+    }
+    
+    # Check browser-vnc
+    try:
+        url = f"{API_BASE_URL}/desktop/{vm_id}/viewer/browser-vnc"
+        response = requests.get(url, headers=API_HEADERS, timeout=5)
+        if response.status_code == 200:
+            data = response.json()
+            if data.get("urlp") or data.get("viewer"):
+                viewers["vnc"] = True
+    except Exception as e:
+        print(f"Error checking VNC for {vm_id}: {e}")
+    
+    # Check file-spice
+    try:
+        url = f"{API_BASE_URL}/desktop/{vm_id}/viewer/file-spice"
+        response = requests.get(url, headers=API_HEADERS, timeout=5)
+        if response.status_code == 200:
+            data = response.json()
+            if data.get("content") or data.get("kind") == "file" or data.get("values"):
+                viewers["spice"] = True
+    except Exception as e:
+        print(f"Error checking SPICE for {vm_id}: {e}")
+    
+    # Check file-rdpgw
+    try:
+        url = f"{API_BASE_URL}/desktop/{vm_id}/viewer/file-rdpgw"
+        response = requests.get(url, headers=API_HEADERS, timeout=5)
+        if response.status_code == 200:
+            data = response.json()
+            if data.get("content") or data.get("kind") == "file" or data.get("values"):
+                viewers["rdp"] = True
+    except Exception as e:
+        print(f"Error checking RDP for {vm_id}: {e}")
+    
+    return jsonify(viewers)
 
 
 @app.route("/debug/viewer/<vm_id>")
