@@ -136,51 +136,154 @@ def fetch_vms():
 def get_viewer_url(vm_id, viewer_type="browser-vnc"):
     """
     Obtiene la URL del visor para conectar a una VM.
-    viewer_type puede ser: browser-vnc, browser-rdp, browser-spice
+    viewer_type puede ser: browser-vnc, browser-rdp, browser-spice, file-spice, file-rdpgw, file-rdpvpn
+    
+    Based on IsardVDI API:
+    - browser-vnc: Returns urlp with noVNC viewer URL
+    - browser-spice: Returns urlp with spice-web-client URL
+    - browser-rdp: Returns viewer URL for RDP (requires cookie/jwt)
+    - file-spice: Returns vv file content for virt-viewer
+    - file-rdpgw: Returns RDP file with gateway settings
+    - file-rdpvpn: Returns RDP file for VPN connection
     """
+    import base64
+    
     url = f"{API_BASE_URL}/desktop/{vm_id}/viewer/{viewer_type}"
     try:
         response = requests.get(url, headers=API_HEADERS)
         response.raise_for_status()
         
         data = response.json()
-        print(f"DEBUG viewer response for {viewer_type}: {data}")
+        print(f"DEBUG viewer response for {viewer_type}: {json.dumps(data, indent=2)}")
         
         if isinstance(data, dict):
-            # The API returns urlp with the full viewer URL
+            # Handle file-type viewers (SPICE, RDP files)
+            if data.get("kind") == "file":
+                content = data.get("content", "")
+                protocol = data.get("protocol", "")
+                ext = data.get("ext", "txt")
+                
+                if protocol == "spice" or ext == "vv":
+                    return {
+                        "type": "spice_file",
+                        "content": content,
+                        "filename": f"desktop-{vm_id}.vv",
+                        "mime": data.get("mime", "application/x-virt-viewer")
+                    }
+                elif protocol in ["rdpgw", "rdpvpn"] or ext == "rdp":
+                    return {
+                        "type": "rdp_file",
+                        "content": content,
+                        "filename": f"desktop-{vm_id}.rdp",
+                        "mime": data.get("mime", "application/x-rdp")
+                    }
+            
+            # Handle browser-type viewers
+            if data.get("kind") == "browser":
+                # The API returns urlp with the full viewer URL
+                urlp = data.get("urlp")
+                if urlp and urlp != "Not implemented":
+                    return {"type": "url", "url": urlp}
+                
+                # Fallback to viewer field
+                viewer = data.get("viewer")
+                if viewer:
+                    return {"type": "url", "url": viewer}
+            
+            # Direct urlp field (common response format)
             urlp = data.get("urlp")
             if urlp and urlp != "Not implemented":
                 return {"type": "url", "url": urlp}
             
-            # For RDP, we need to generate the .rdp file from the cookie/viewer data
-            if data.get("protocol") == "rdp":
+            # For browser-rdp, we might need to construct the URL with cookie
+            if viewer_type == "browser-rdp" and data.get("protocol") == "rdp":
                 cookie = data.get("cookie", "")
-                viewer_data = data.get("web_viewer") or {}
-                # Try to decode JWT cookie to get connection info
-                try:
-                    import base64
-                    # JWT has 3 parts separated by dots
-                    parts = cookie.split(".")
-                    if len(parts) >= 2:
-                        # Decode the payload (2nd part)
-                        payload = parts[1]
-                        # Add padding if needed
-                        payload += "=" * (4 - len(payload) % 4)
-                        decoded = json.loads(base64.urlsafe_b64decode(payload))
-                        web_viewer = decoded.get("web_viewer", {})
+                viewer_url = data.get("viewer", "")
+                if viewer_url and cookie:
+                    # Check if URL already has parameters
+                    separator = "&" if "?" in viewer_url else "?"
+                    return {"type": "url", "url": f"{viewer_url}{separator}cookie={cookie}"}
+                elif viewer_url:
+                    return {"type": "url", "url": viewer_url}
+            
+            # For file-spice, check if we got spice file content in different format
+            if viewer_type == "file-spice":
+                # Try to build SPICE vv file from data
+                if data.get("values") or data.get("cookie"):
+                    values = data.get("values", {})
+                    if not values and data.get("cookie"):
+                        try:
+                            cookie_data = base64.b64decode(data.get("cookie", ""))
+                            cookie_json = json.loads(cookie_data)
+                            values = cookie_json.get("web_viewer", {})
+                        except Exception:
+                            pass
+                    
+                    if values:
+                        proxy_host = values.get("host", "")
+                        proxy_port = values.get("port", "443")
+                        vm_host = values.get("vmHost", "")
+                        vm_port = values.get("vmPort", "")
+                        password = values.get("token", "")
+                        vm_name = values.get("vmName", f"desktop-{vm_id}")
                         
-                        vm_host = web_viewer.get("vmHost", "")
-                        vm_username = web_viewer.get("vmUsername", "admin")
-                        vm_password = web_viewer.get("vmPassword", "admin")
-                        gateway_host = web_viewer.get("host", "cloud.uni.eus")
-                        gateway_port = web_viewer.get("port", "80")
-                        
-                        # Generate RDP file content
-                        rdp_content = f"""full address:s:{vm_host}
+                        # Build virt-viewer file format
+                        spice_content = f"""[virt-viewer]
+type=spice
+proxy=http://{proxy_host}:{proxy_port}
+host={vm_host}
+password={password}
+tls-port={vm_port}
+fullscreen=0
+title={vm_name} - Press SHIFT+F12 to exit
+delete-this-file=1
+"""
+                        return {
+                            "type": "spice_file",
+                            "content": spice_content,
+                            "filename": f"desktop-{vm_id}.vv",
+                            "mime": "application/x-virt-viewer"
+                        }
+            
+            # For file-rdpgw or file-rdpvpn, build RDP file from data
+            if viewer_type in ["file-rdpgw", "file-rdpvpn"]:
+                content = data.get("content")
+                if content:
+                    return {
+                        "type": "rdp_file",
+                        "content": content,
+                        "filename": f"desktop-{vm_id}.rdp",
+                        "mime": "application/x-rdp"
+                    }
+                
+                # Try to build from cookie/values
+                values = data.get("values", {})
+                cookie = data.get("cookie", "")
+                
+                if not values and cookie:
+                    try:
+                        # Try JWT decode
+                        parts = cookie.split(".")
+                        if len(parts) >= 2:
+                            payload = parts[1]
+                            payload += "=" * (4 - len(payload) % 4)
+                            decoded = json.loads(base64.urlsafe_b64decode(payload))
+                            values = decoded.get("web_viewer", {})
+                    except Exception:
+                        pass
+                
+                if values:
+                    vm_host = values.get("vmHost", "")
+                    vm_username = values.get("vmUsername", "")
+                    vm_password = values.get("vmPassword", "")
+                    gateway_host = values.get("host", "")
+                    gateway_port = values.get("port", "443")
+                    
+                    rdp_content = f"""full address:s:{vm_host}
 gatewayhostname:s:{gateway_host}:{gateway_port}
 gatewayaccesstoken:s:{cookie}
 username:s:{vm_username}
-password:s:{vm_password}
+password 51:b:{vm_password}
 enableworkspacereconnect:i:0
 disable wallpaper:i:0
 allow desktop composition:i:0
@@ -219,12 +322,21 @@ allow font smoothing:i:1
 bitmapcachesize:i:32000
 smart sizing:i:1
 """
-                        return {"type": "rdp_file", "content": rdp_content}
-                except Exception as e:
-                    print(f"Error decoding RDP cookie: {e}")
+                    return {
+                        "type": "rdp_file",
+                        "content": rdp_content,
+                        "filename": f"desktop-{vm_id}.rdp",
+                        "mime": "application/x-rdp"
+                    }
             
-            # Fallback to other fields
-            return data.get("viewer") or data.get("url") or data.get("uri") or data
+            # Fallback to direct viewer URL or other fields
+            viewer = data.get("viewer") or data.get("url") or data.get("uri")
+            if viewer:
+                return {"type": "url", "url": viewer}
+            
+            # Return raw data if nothing else works
+            return data
+        
         return data
             
     except requests.exceptions.HTTPError as e:
@@ -233,6 +345,8 @@ smart sizing:i:1
         return None
     except Exception as e:
         print(f"Error al obtener viewer para {vm_id} ({viewer_type}): {e}")
+        import traceback
+        traceback.print_exc()
         return None
 
 
@@ -543,7 +657,7 @@ HTML_TEMPLATE = """
                                 </div>
                                 <!-- Viewer Connection -->
                                 <div class="vm-info-section viewer-section" style="{% if vm.status != 'Started' %}display: none;{% endif %}">
-                                    <div class="info-label"><i class="fas fa-plug me-1"></i>Conectar</div>
+                                    <div class="info-label"><i class="fas fa-plug me-1"></i>Conectar (Navegador)</div>
                                     <div class="info-value">
                                         <div class="btn-group" role="group">
                                             <a href="{{ url_for('get_viewer', vm_id=vm.id, viewer_type='browser-vnc') }}" class="btn btn-sm btn-outline-info spice-btn" target="_blank" title="Abrir VNC en navegador">
@@ -552,8 +666,19 @@ HTML_TEMPLATE = """
                                             <a href="{{ url_for('get_viewer', vm_id=vm.id, viewer_type='browser-spice') }}" class="btn btn-sm btn-outline-warning spice-btn" target="_blank" title="Abrir SPICE en navegador">
                                                 <i class="fas fa-globe me-1"></i>SPICE
                                             </a>
-                                            <a href="{{ url_for('get_viewer', vm_id=vm.id, viewer_type='browser-rdp') }}" class="btn btn-sm btn-outline-success spice-btn" target="_blank" title="RDP en navegador (no implementado)">
+                                            <a href="{{ url_for('get_viewer', vm_id=vm.id, viewer_type='browser-rdp') }}" class="btn btn-sm btn-outline-success spice-btn" target="_blank" title="RDP en navegador">
                                                 <i class="fas fa-globe me-1"></i>RDP
+                                            </a>
+                                        </div>
+                                    </div>
+                                    <div class="info-label mt-2"><i class="fas fa-download me-1"></i>Descargar Cliente</div>
+                                    <div class="info-value">
+                                        <div class="btn-group" role="group">
+                                            <a href="{{ url_for('get_viewer', vm_id=vm.id, viewer_type='file-spice') }}" class="btn btn-sm btn-warning spice-btn" title="Descargar archivo .vv para virt-viewer">
+                                                <i class="fas fa-download me-1"></i>SPICE
+                                            </a>
+                                            <a href="{{ url_for('get_viewer', vm_id=vm.id, viewer_type='file-rdpgw') }}" class="btn btn-sm btn-success spice-btn" title="Descargar archivo .rdp con Gateway">
+                                                <i class="fas fa-download me-1"></i>RDP
                                             </a>
                                         </div>
                                     </div>
@@ -660,7 +785,7 @@ HTML_TEMPLATE = """
                                 </div>
                                 <!-- Viewer Connection -->
                                 <div class="vm-info-section viewer-section" style="{% if vm.status != 'Started' %}display: none;{% endif %}">
-                                    <div class="info-label"><i class="fas fa-plug me-1"></i>Conectar</div>
+                                    <div class="info-label"><i class="fas fa-plug me-1"></i>Conectar (Navegador)</div>
                                     <div class="info-value">
                                         <div class="btn-group" role="group">
                                             <a href="{{ url_for('get_viewer', vm_id=vm.id, viewer_type='browser-vnc') }}" class="btn btn-sm btn-outline-info spice-btn" target="_blank" title="Abrir VNC en navegador">
@@ -669,7 +794,18 @@ HTML_TEMPLATE = """
                                             <a href="{{ url_for('get_viewer', vm_id=vm.id, viewer_type='browser-spice') }}" class="btn btn-sm btn-outline-warning spice-btn" target="_blank" title="Abrir SPICE en navegador">
                                                 <i class="fas fa-globe me-1"></i>SPICE
                                             </a>
-                                            <a href="{{ url_for('get_viewer', vm_id=vm.id, viewer_type='browser-rdp') }}" class="btn btn-sm btn-outline-success spice-btn" title="Descargar archivo RDP">
+                                            <a href="{{ url_for('get_viewer', vm_id=vm.id, viewer_type='browser-rdp') }}" class="btn btn-sm btn-outline-success spice-btn" target="_blank" title="RDP en navegador">
+                                                <i class="fas fa-globe me-1"></i>RDP
+                                            </a>
+                                        </div>
+                                    </div>
+                                    <div class="info-label mt-2"><i class="fas fa-download me-1"></i>Descargar Cliente</div>
+                                    <div class="info-value">
+                                        <div class="btn-group" role="group">
+                                            <a href="{{ url_for('get_viewer', vm_id=vm.id, viewer_type='file-spice') }}" class="btn btn-sm btn-warning spice-btn" title="Descargar archivo .vv para virt-viewer">
+                                                <i class="fas fa-download me-1"></i>SPICE
+                                            </a>
+                                            <a href="{{ url_for('get_viewer', vm_id=vm.id, viewer_type='file-rdpgw') }}" class="btn btn-sm btn-success spice-btn" title="Descargar archivo .rdp con Gateway">
                                                 <i class="fas fa-download me-1"></i>RDP
                                             </a>
                                         </div>
@@ -1036,10 +1172,20 @@ def get_viewer(vm_id, viewer_type="browser-vnc"):
             if viewer_data.get("type") == "url":
                 return redirect(viewer_data["url"])
             elif viewer_data.get("type") == "rdp_file":
+                filename = viewer_data.get("filename", f"desktop-{vm_id}.rdp")
+                mime = viewer_data.get("mime", "application/x-rdp")
                 return Response(
                     viewer_data["content"],
-                    mimetype="application/x-rdp",
-                    headers={"Content-Disposition": f"attachment; filename=desktop-{vm_id}.rdp"}
+                    mimetype=mime,
+                    headers={"Content-Disposition": f"attachment; filename={filename}"}
+                )
+            elif viewer_data.get("type") == "spice_file":
+                filename = viewer_data.get("filename", f"desktop-{vm_id}.vv")
+                mime = viewer_data.get("mime", "application/x-virt-viewer")
+                return Response(
+                    viewer_data["content"],
+                    mimetype=mime,
+                    headers={"Content-Disposition": f"attachment; filename={filename}"}
                 )
         
         # Handle data URI (like RDP files)
