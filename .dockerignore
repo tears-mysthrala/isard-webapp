@@ -1,0 +1,34 @@
+# Exclude sensitive configuration files
+config.json
+folders.json
+
+# Exclude development files
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.so
+*.egg
+*.egg-info/
+dist/
+build/
+
+# Exclude git
+.git/
+.gitignore
+
+# Exclude Docker files
+docker-compose.yml
+.dockerignore
+
+# Exclude editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Exclude environment files
+.env
+.env.local
