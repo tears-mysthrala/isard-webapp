@@ -149,5 +149,6 @@ Thumbs.db
 secrets.json
 config/secrets.json
 
-# Project specific
+# Project specific - sensitive configuration files
+config.json
 folders.json
