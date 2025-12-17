@@ -1,23 +1,64 @@
 import os
 import json
 import requests
+import base64
 from urllib.parse import unquote
-from flask import Flask, render_template_string, redirect, url_for, flash, request, jsonify, Response
+from flask import Flask, render_template_string, redirect, url_for, flash, request, jsonify, Response, session
+from functools import wraps
 
 # --- CONFIGURACIÓN ---
-# Por razones de seguridad, la clave API y el Bearer se han truncado para el ejemplo.
-# Debes rellenar los valores correctos de tu entorno.
-
-API_KEY = os.environ["API_KEY"]
 API_BASE_URL = "https://cloud.uni.eus/api/v3"
-
-API_HEADERS = {"Authorization": f"Bearer {API_KEY}", "Content-Type": "application/json"}
+CONFIG_FILE = "config.json"
 
 MAQUINAS = {}  # Cache para las VMs
 
 # --- CARPETAS ---
 FOLDERS_FILE = "folders.json"
 FOLDERS = {}  # { "folder_id": { "name": "Folder Name", "machines": ["vm_id1", "vm_id2"] } }
+
+# --- CONFIGURACIÓN DE API KEY ---
+def load_config():
+    """Carga la configuración (última API key usada)."""
+    try:
+        if os.path.exists(CONFIG_FILE):
+            with open(CONFIG_FILE, "r") as f:
+                return json.load(f)
+    except Exception as e:
+        print(f"Error al cargar config: {e}")
+    return {}
+
+def save_config(config):
+    """Guarda la configuración."""
+    try:
+        with open(CONFIG_FILE, "w") as f:
+            json.dump(config, f)
+    except Exception as e:
+        print(f"Error al guardar config: {e}")
+
+def get_api_headers():
+    """Obtiene los headers de la API usando la API Key de la sesión."""
+    api_key = session.get('api_key')
+    if not api_key:
+        return None
+    return {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
+
+def handle_api_error(response):
+    """Maneja errores de API, especialmente autenticación inválida."""
+    if response.status_code == 401:
+        # API Key inválida o expirada
+        session.pop('api_key', None)
+        session['api_error'] = 'invalid_key'
+        return True
+    return False
+
+def require_api_key(f):
+    """Decorador para requerir API Key en la sesión."""
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        if 'api_key' not in session:
+            return redirect(url_for('login'))
+        return f(*args, **kwargs)
+    return decorated_function
 
 
 def load_folders():
@@ -89,8 +130,13 @@ def fetch_vms():
     """Obtiene la lista de escritorios del usuario."""
     global MAQUINAS
     url = f"{API_BASE_URL}/user/desktops"
+    headers = get_api_headers()
+    if not headers:
+        return False
     try:
-        response = requests.get(url, headers=API_HEADERS)
+        response = requests.get(url, headers=headers)
+        if handle_api_error(response):
+            return False
         response.raise_for_status()
         data = response.json()
         MAQUINAS = {}
@@ -149,8 +195,11 @@ def get_viewer_url(vm_id, viewer_type="browser-vnc"):
     import base64
     
     url = f"{API_BASE_URL}/desktop/{vm_id}/viewer/{viewer_type}"
+    headers = get_api_headers()
+    if not headers:
+        return None
     try:
-        response = requests.get(url, headers=API_HEADERS)
+        response = requests.get(url, headers=headers)
         response.raise_for_status()
         
         data = response.json()
@@ -358,10 +407,16 @@ def api_action(vm_id, action):
 
     # 🚨 LA RUTA CORRECTA 🚨
     url = f"{API_BASE_URL}/desktop/{action}/{vm_id}"
+    
+    headers = get_api_headers()
+    if not headers:
+        return False, "No hay API Key configurada"
 
     try:
         # Usamos GET para las acciones, como descubriste
-        response = requests.get(url, headers=API_HEADERS)
+        response = requests.get(url, headers=headers)
+        if handle_api_error(response):
+            return False, "API Key inválida o expirada"
         response.raise_for_status()
 
         # Opcionalmente, podemos esperar y actualizar el estado
@@ -580,8 +635,17 @@ HTML_TEMPLATE = """
 <body>
     <div class="container">
         <div class="header">
-            <h1 class="mb-3"><i class="fas fa-server me-3"></i>IsardVDI Dashboard</h1>
-            <p class="mb-0">Gestión de máquinas virtuales</p>
+            <div class="d-flex justify-content-between align-items-center">
+                <div>
+                    <h1 class="mb-2"><i class="fas fa-server me-3"></i>IsardVDI Dashboard</h1>
+                    <p class="mb-0">Gestión de máquinas virtuales</p>
+                </div>
+                <div>
+                    <a href="{{ url_for('logout') }}" class="btn btn-outline-light btn-sm">
+                        <i class="fas fa-sign-out-alt me-2"></i>Cerrar Sesión
+                    </a>
+                </div>
+            </div>
         </div>
 
         {% with messages = get_flashed_messages(with_categories=true) %}
@@ -976,6 +1040,18 @@ HTML_TEMPLATE = """
         async function refreshData() {
             try {
                 const response = await fetch('/api/vms');
+                
+                // Check if API Key is invalid (401)
+                if (response.status === 401) {
+                    const data = await response.json();
+                    if (data.redirect) {
+                        // Show alert and redirect to login
+                        alert('Tu API Key ha expirado o ya no es válida. Serás redirigido al login.');
+                        window.location.href = data.redirect;
+                        return;
+                    }
+                }
+                
                 if (!response.ok) throw new Error('Error fetching data');
                 const data = await response.json();
                 
@@ -1077,10 +1153,242 @@ HTML_TEMPLATE = """
 </html>
 """
 
+LOGIN_TEMPLATE = """
+<!doctype html>
+<html lang="es">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>IsardVDI Dashboard - Login</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+    <style>
+        body {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        }
+        .login-card {
+            background: rgba(255, 255, 255, 0.95);
+            border-radius: 20px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+            padding: 3rem;
+            max-width: 500px;
+            width: 100%;
+        }
+        .login-header {
+            text-align: center;
+            margin-bottom: 2rem;
+        }
+        .login-header h1 {
+            color: #1e3c72;
+            font-weight: bold;
+            margin-bottom: 0.5rem;
+        }
+        .login-header p {
+            color: #6c757d;
+        }
+        .form-control {
+            border-radius: 10px;
+            padding: 0.75rem 1rem;
+            border: 2px solid #e9ecef;
+        }
+        .form-control:focus {
+            border-color: #667eea;
+            box-shadow: 0 0 0 0.2rem rgba(102, 126, 234, 0.25);
+        }
+        .btn-login {
+            background: linear-gradient(45deg, #667eea, #764ba2);
+            border: none;
+            border-radius: 10px;
+            padding: 0.75rem;
+            font-weight: 600;
+            color: white;
+            width: 100%;
+            transition: transform 0.3s ease;
+        }
+        .btn-login:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 20px rgba(102, 126, 234, 0.4);
+            color: white;
+        }
+        .api-key-input {
+            position: relative;
+        }
+        .toggle-password {
+            position: absolute;
+            right: 15px;
+            top: 50%;
+            transform: translateY(-50%);
+            cursor: pointer;
+            color: #6c757d;
+        }
+        .info-box {
+            background: #e7f3ff;
+            border-left: 4px solid #667eea;
+            padding: 1rem;
+            border-radius: 5px;
+            margin-top: 1.5rem;
+            font-size: 0.9rem;
+        }
+        .remember-box {
+            margin: 1rem 0;
+        }
+    </style>
+</head>
+<body>
+    <div class="login-card">
+        <div class="login-header">
+            <i class="fas fa-server fa-3x text-primary mb-3"></i>
+            <h1>IsardVDI Dashboard</h1>
+            <p>Introduce tu API Key para continuar</p>
+        </div>
+
+        {% with messages = get_flashed_messages(with_categories=true) %}
+            {% if messages %}
+                {% for category, message in messages %}
+                    <div class="alert alert-{{ category }} alert-dismissible fade show" role="alert">
+                        {{ message }}
+                        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+                    </div>
+                {% endfor %}
+            {% endif %}
+        {% endwith %}
+
+        <form method="POST" action="{{ url_for('login') }}">
+            <div class="mb-3">
+                <label for="api_key" class="form-label"><i class="fas fa-key me-2"></i>API Key</label>
+                <div class="api-key-input">
+                    <input type="password" class="form-control" id="api_key" name="api_key" 
+                           placeholder="Pega tu API Key de IsardVDI" required value="{{ saved_key or '' }}">
+                    <i class="fas fa-eye toggle-password" id="togglePassword"></i>
+                </div>
+            </div>
+
+            <div class="remember-box">
+                <div class="form-check">
+                    <input class="form-check-input" type="checkbox" id="remember" name="remember" {{ 'checked' if saved_key else '' }}>
+                    <label class="form-check-label" for="remember">
+                        Recordar API Key en este dispositivo
+                    </label>
+                </div>
+            </div>
+
+            <button type="submit" class="btn btn-login">
+                <i class="fas fa-sign-in-alt me-2"></i>Iniciar Sesión
+            </button>
+        </form>
+
+        <div class="info-box">
+            <strong><i class="fas fa-info-circle me-2"></i>¿Dónde encuentro mi API Key?</strong>
+            <ol class="mb-0 mt-2">
+                <li>Accede a <a href="https://cloud.uni.eus" target="_blank">cloud.uni.eus</a></li>
+                <li>Ve a tu perfil de usuario</li>
+                <li>Busca la sección "API Keys"</li>
+                <li>Copia tu API Key y pégala aquí</li>
+            </ol>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        // Toggle password visibility
+        document.getElementById('togglePassword').addEventListener('click', function() {
+            const passwordInput = document.getElementById('api_key');
+            const icon = this;
+            
+            if (passwordInput.type === 'password') {
+                passwordInput.type = 'text';
+                icon.classList.remove('fa-eye');
+                icon.classList.add('fa-eye-slash');
+            } else {
+                passwordInput.type = 'password';
+                icon.classList.remove('fa-eye-slash');
+                icon.classList.add('fa-eye');
+            }
+        });
+    </script>
+</body>
+</html>
+"""
+
+
+@app.route("/login", methods=["GET", "POST"])
+def login():
+    if request.method == "POST":
+        api_key = request.form.get("api_key", "").strip()
+        remember = request.form.get("remember") == "on"
+        
+        if not api_key:
+            flash("Por favor ingresa una API Key", "danger")
+            return redirect(url_for("login"))
+        
+        # Test the API key
+        test_url = f"{API_BASE_URL}/user/desktops"
+        test_headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
+        
+        try:
+            response = requests.get(test_url, headers=test_headers, timeout=10)
+            response.raise_for_status()
+            
+            # API key is valid, save it
+            session['api_key'] = api_key
+            
+            # Save to config if remember is checked
+            if remember:
+                config = load_config()
+                config['last_api_key'] = base64.b64encode(api_key.encode()).decode()
+                save_config(config)
+            else:
+                # Clear saved key if not remembering
+                config = load_config()
+                if 'last_api_key' in config:
+                    del config['last_api_key']
+                    save_config(config)
+            
+            flash("Sesión iniciada correctamente", "success")
+            return redirect(url_for("index"))
+            
+        except requests.exceptions.HTTPError as e:
+            if e.response.status_code == 401:
+                flash("API Key inválida. Por favor verifica e intenta de nuevo.", "danger")
+            else:
+                flash(f"Error al validar la API Key: {e.response.status_code}", "danger")
+        except Exception as e:
+            flash(f"Error de conexión: {str(e)}", "danger")
+        
+        return redirect(url_for("login"))
+    
+    # GET request - show login form
+    config = load_config()
+    saved_key = None
+    if 'last_api_key' in config:
+        try:
+            saved_key = base64.b64decode(config['last_api_key']).decode()
+        except Exception:
+            pass
+    
+    return render_template_string(LOGIN_TEMPLATE, saved_key=saved_key)
+
+
+@app.route("/logout")
+def logout():
+    session.pop('api_key', None)
+    flash("Sesión cerrada", "info")
+    return redirect(url_for("login"))
+
 
 @app.route("/")
+@require_api_key
 def index():
     if not fetch_vms():
+        # Check if it was an API key error
+        if session.pop('api_error', None) == 'invalid_key':
+            flash("Tu API Key ha expirado o ya no es válida. Por favor, ingresa una nueva API Key.", "warning")
+            return redirect(url_for('login'))
         flash("Error al conectar con la API o al obtener las máquinas.", "danger")
         return render_template_string(HTML_TEMPLATE, maquinas={}, folders={}, unassigned_machines={})
 
@@ -1110,23 +1418,35 @@ def index():
 
 
 @app.route("/start/<vm_id>")
+@require_api_key
 def start_vm(vm_id):
     success, message = api_action(vm_id, "start")
+    if not success and session.pop('api_error', None) == 'invalid_key':
+        flash("Tu API Key ha expirado o ya no es válida. Por favor, ingresa una nueva API Key.", "warning")
+        return redirect(url_for('login'))
     flash(message, "success" if success else "danger")
     return redirect(url_for("index"))
 
 
 @app.route("/stop/<vm_id>")
+@require_api_key
 def stop_vm(vm_id):
     success, message = api_action(vm_id, "stop")
+    if not success and session.pop('api_error', None) == 'invalid_key':
+        flash("Tu API Key ha expirado o ya no es válida. Por favor, ingresa una nueva API Key.", "warning")
+        return redirect(url_for('login'))
     flash(message, "success" if success else "danger")
     return redirect(url_for("index"))
 
 
 @app.route("/api/vms")
+@require_api_key
 def api_get_vms():
     """API endpoint para obtener datos de VMs en formato JSON (para refresh AJAX)."""
     if not fetch_vms():
+        # Check if it was an API key error
+        if session.pop('api_error', None) == 'invalid_key':
+            return jsonify({"error": "API Key inválida o expirada", "redirect": url_for('login')}), 401
         return jsonify({"error": "Error al conectar con la API"}), 500
     
     # Preparar datos
@@ -1167,6 +1487,7 @@ def api_get_vms():
 
 
 @app.route("/api/viewers/<vm_id>")
+@require_api_key
 def api_get_viewers(vm_id):
     """API endpoint para verificar qué viewers están disponibles para una VM."""
     viewers = {
@@ -1176,9 +1497,12 @@ def api_get_viewers(vm_id):
     }
     
     # Check browser-vnc
+    headers = get_api_headers()
+    if not headers:
+        return jsonify(viewers)
     try:
         url = f"{API_BASE_URL}/desktop/{vm_id}/viewer/browser-vnc"
-        response = requests.get(url, headers=API_HEADERS, timeout=5)
+        response = requests.get(url, headers=headers, timeout=5)
         if response.status_code == 200:
             data = response.json()
             if data.get("urlp") or data.get("viewer"):
@@ -1189,7 +1513,7 @@ def api_get_viewers(vm_id):
     # Check file-spice
     try:
         url = f"{API_BASE_URL}/desktop/{vm_id}/viewer/file-spice"
-        response = requests.get(url, headers=API_HEADERS, timeout=5)
+        response = requests.get(url, headers=headers, timeout=5)
         if response.status_code == 200:
             data = response.json()
             if data.get("content") or data.get("kind") == "file" or data.get("values"):
@@ -1200,7 +1524,7 @@ def api_get_viewers(vm_id):
     # Check file-rdpgw
     try:
         url = f"{API_BASE_URL}/desktop/{vm_id}/viewer/file-rdpgw"
-        response = requests.get(url, headers=API_HEADERS, timeout=5)
+        response = requests.get(url, headers=headers, timeout=5)
         if response.status_code == 200:
             data = response.json()
             if data.get("content") or data.get("kind") == "file" or data.get("values"):
@@ -1216,8 +1540,11 @@ def api_get_viewers(vm_id):
 def debug_viewer(vm_id, viewer_type="file-rdp"):
     """Debug endpoint para ver qué devuelve la API del viewer."""
     url = f"{API_BASE_URL}/desktop/{vm_id}/viewer/{viewer_type}"
+    headers = get_api_headers()
+    if not headers:
+        return jsonify({"error": "No API Key configured", "url_called": url})
     try:
-        response = requests.get(url, headers=API_HEADERS)
+        response = requests.get(url, headers=headers)
         return jsonify({
             "status_code": response.status_code,
             "headers": dict(response.headers),
@@ -1231,6 +1558,7 @@ def debug_viewer(vm_id, viewer_type="file-rdp"):
 
 @app.route("/viewer/<vm_id>")
 @app.route("/viewer/<vm_id>/<viewer_type>")
+@require_api_key
 def get_viewer(vm_id, viewer_type="browser-vnc"):
     """Obtiene la URL del visor y redirige o devuelve el archivo."""
     viewer_data = get_viewer_url(vm_id, viewer_type)
@@ -1251,7 +1579,10 @@ def get_viewer(vm_id, viewer_type="browser-vnc"):
                     # We'll fetch again to get the cookie
                     try:
                         api_url = f"{API_BASE_URL}/desktop/{vm_id}/viewer/{viewer_type}"
-                        response = requests.get(api_url, headers=API_HEADERS)
+                        headers = get_api_headers()
+                        if not headers:
+                            return redirect(url)
+                        response = requests.get(api_url, headers=headers)
                         data = response.json()
                         cookie_value = data.get("cookie", "")
                         
@@ -1376,6 +1707,7 @@ def get_viewer(vm_id, viewer_type="browser-vnc"):
 
 
 @app.route("/folder/create", methods=["POST"])
+@require_api_key
 def create_folder():
     """Crea una nueva carpeta."""
     folder_name = request.form.get("folder_name", "").strip()
@@ -1391,6 +1723,7 @@ def create_folder():
 
 
 @app.route("/folder/rename/<folder_id>", methods=["POST"])
+@require_api_key
 def rename_folder(folder_id):
     """Renombra una carpeta existente."""
     if folder_id not in FOLDERS:
@@ -1409,6 +1742,7 @@ def rename_folder(folder_id):
 
 
 @app.route("/folder/delete/<folder_id>")
+@require_api_key
 def delete_folder(folder_id):
     """Elimina una carpeta (las máquinas vuelven a 'Sin carpeta')."""
     if folder_id not in FOLDERS:
@@ -1423,6 +1757,7 @@ def delete_folder(folder_id):
 
 
 @app.route("/folder/assign/<folder_id>/<vm_id>")
+@require_api_key
 def assign_to_folder(folder_id, vm_id):
     """Asigna una máquina a una carpeta."""
     if folder_id not in FOLDERS:
@@ -1444,6 +1779,7 @@ def assign_to_folder(folder_id, vm_id):
 
 
 @app.route("/folder/unassign/<vm_id>")
+@require_api_key
 def unassign_from_folder(vm_id):
     """Quita una máquina de su carpeta actual."""
     for folder in FOLDERS.values():
