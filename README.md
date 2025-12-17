@@ -2,7 +2,7 @@
 
 [![Docker Hub](https://img.shields.io/badge/Docker%20Hub-sasukeuni%2Fisard--app-blue?logo=docker)](https://hub.docker.com/r/sasukeuni/isard-app)
 [![Python](https://img.shields.io/badge/Python-3.9-blue?logo=python)](https://www.python.org/)
-[![Flask](https://img.shields.io/badge/Flask-2.3.3-lightgrey?logo=flask)](https://flask.palletsprojects.com/)
+[![Flask](https://img.shields.io/badge/Flask-3.1.2-lightgrey?logo=flask)](https://flask.palletsprojects.com/)
 [![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 
 Web application to manage and organize IsardVDI virtual machines with folder organization and Docker support.
@@ -21,9 +21,9 @@ This project is a web application developed in **Python** using the **Flask** fr
 ### Technologies Used
 
 - **Language**: Python 3.9
-- **Web Framework**: Flask 2.3.3
+- **Web Framework**: Flask 3.1.2
 - **Libraries**:
-  - `requests` 2.31.0: For making HTTP requests to the API
+  - `requests` 2.32.5: For making HTTP requests to the API
   - `urllib.parse`: For URL decoding
   - `json`: For handling JSON files
   - `os`: For accessing environment variables
