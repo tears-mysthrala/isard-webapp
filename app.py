@@ -6,19 +6,19 @@ from urllib.parse import unquote
 from flask import Flask, render_template_string, redirect, url_for, flash, request, jsonify, Response, session
 from functools import wraps
 
-# --- CONFIGURACIÓN ---
+# --- CONFIGURATION ---
 API_BASE_URL = "https://cloud.uni.eus/api/v3"
 CONFIG_FILE = "config.json"
 
-MAQUINAS = {}  # Cache para las VMs
+MAQUINAS = {}  # Cache for VMs
 
-# --- CARPETAS ---
+# --- FOLDERS ---
 FOLDERS_FILE = "folders.json"
 FOLDERS = {}  # { "folder_id": { "name": "Folder Name", "machines": ["vm_id1", "vm_id2"] } }
 
-# --- CONFIGURACIÓN DE API KEY ---
+# --- API KEY CONFIGURATION ---
 def load_config():
-    """Carga la configuración (última API key usada)."""
+    """Loads configuration (last API key used)."""
     try:
         if os.path.exists(CONFIG_FILE):
             with open(CONFIG_FILE, "r") as f:
@@ -28,7 +28,7 @@ def load_config():
     return {}
 
 def save_config(config):
-    """Guarda la configuración."""
+    """Saves configuration."""
     try:
         with open(CONFIG_FILE, "w") as f:
             json.dump(config, f)
@@ -36,23 +36,23 @@ def save_config(config):
         print(f"Error al guardar config: {e}")
 
 def get_api_headers():
-    """Obtiene los headers de la API usando la API Key de la sesión."""
+    """Gets API headers using the session API Key."""
     api_key = session.get('api_key')
     if not api_key:
         return None
     return {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
 
 def handle_api_error(response):
-    """Maneja errores de API, especialmente autenticación inválida."""
+    """Handles API errors, especially invalid authentication."""
     if response.status_code == 401:
-        # API Key inválida o expirada
+        # Invalid or expired API Key
         session.pop('api_key', None)
         session['api_error'] = 'invalid_key'
         return True
     return False
 
 def require_api_key(f):
-    """Decorador para requerir API Key en la sesión."""
+    """Decorator to require API Key in session."""
     @wraps(f)
     def decorated_function(*args, **kwargs):
         if 'api_key' not in session:
@@ -113,13 +113,13 @@ def get_machines_in_folder(folder_id):
     return {vm_id: vm for vm_id, vm in MAQUINAS.items() if vm_id in machine_ids}
 
 
-# Cargar carpetas al iniciar
+# Load folders on startup
 load_folders()
 
-# --- APLICACIÓN FLASK ---
+# --- FLASK APPLICATION ---
 
 app = Flask(__name__)
-app.secret_key = "super_secreto_isard"  # Clave para mensajes flash
+app.secret_key = "super_secreto_isard"  # Key for flash messages
 
 # ==============================================================================
 # FUNCIONES DE API
@@ -1398,7 +1398,7 @@ def index():
         vm["folder_id"] = get_folder_for_machine(vm_id)
         data_for_template[vm_id] = vm
 
-    # Preparar datos de carpetas con sus máquinas
+    # Prepare folder data with their machines
     folders_data = {}
     for folder_id, folder in FOLDERS.items():
         folders_data[folder_id] = {
@@ -1406,7 +1406,7 @@ def index():
             "machines": get_machines_in_folder(folder_id)
         }
     
-    # Máquinas sin carpeta
+    # Machines without folder
     unassigned = get_machines_without_folder()
 
     return render_template_string(
@@ -1473,7 +1473,7 @@ def api_get_vms():
             "machines": folder_machines
         }
     
-    # Máquinas sin carpeta
+    # Machines without folder
     assigned_machines = set()
     for folder in FOLDERS.values():
         assigned_machines.update(folder.get("machines", []))
@@ -1702,14 +1702,14 @@ def get_viewer(vm_id, viewer_type="browser-vnc"):
 
 
 # ==============================================================================
-# RUTAS DE GESTIÓN DE CARPETAS
+# FOLDER MANAGEMENT ROUTES
 # ==============================================================================
 
 
 @app.route("/folder/create", methods=["POST"])
 @require_api_key
 def create_folder():
-    """Crea una nueva carpeta."""
+    """Creates a new folder."""
     folder_name = request.form.get("folder_name", "").strip()
     if not folder_name:
         flash("El nombre de la carpeta no puede estar vacío.", "danger")
@@ -1759,12 +1759,12 @@ def delete_folder(folder_id):
 @app.route("/folder/assign/<folder_id>/<vm_id>")
 @require_api_key
 def assign_to_folder(folder_id, vm_id):
-    """Asigna una máquina a una carpeta."""
+    """Assigns a machine to a folder."""
     if folder_id not in FOLDERS:
         flash("Carpeta no encontrada.", "danger")
         return redirect(url_for("index"))
     
-    # Primero, quitar la máquina de cualquier carpeta anterior
+    # First, remove the machine from any previous folder
     for fid, folder in FOLDERS.items():
         if vm_id in folder.get("machines", []):
             folder["machines"].remove(vm_id)

@@ -7,53 +7,53 @@
 
 Web application to manage and organize IsardVDI virtual machines with folder organization and Docker support.
 
-## 📋 Descripción del Proyecto
+## 📋 Project Description
 
-Este proyecto es una aplicación web desarrollada en **Python** utilizando el framework **Flask**. Su propósito principal es gestionar y organizar máquinas virtuales (VMs) de IsardVDI, un sistema de virtualización basado en la nube. Creada por la alumna de ciberseguridad Unai Urzainqui, conocida en github como [tears-mysthrala](https://github.com/tears-mysthrala).
+This project is a web application developed in **Python** using the **Flask** framework. Its main purpose is to manage and organize IsardVDI virtual machines (VMs), a cloud-based virtualization system. Created by cybersecurity student Unai Urzainqui, known on GitHub as [tears-mysthrala](https://github.com/tears-mysthrala).
 
-### Funcionalidades Principales
+### Key Features
 
-- **Gestión de VMs**: La aplicación se conecta a la API de IsardVDI (`https://cloud.uni.eus/api/v3`) para obtener la lista de escritorios (desktops) del usuario.
-- **Organización en Carpetas**: Permite agrupar las VMs en carpetas personalizadas, almacenadas en un archivo JSON (`folders.json`).
-- **Interfaz Web**: Proporciona una interfaz web para visualizar, organizar y gestionar las máquinas virtuales.
-- **Cache de VMs**: Mantiene un caché en memoria de las máquinas para optimizar las consultas.
+- **VM Management**: The application connects to the IsardVDI API (`https://cloud.uni.eus/api/v3`) to retrieve the user's desktop list.
+- **Folder Organization**: Allows grouping VMs into custom folders, stored in a JSON file (`folders.json`).
+- **Web Interface**: Provides a web interface to visualize, organize, and manage virtual machines.
+- **VM Caching**: Maintains an in-memory cache of machines to optimize queries.
 
-### Tecnologías Utilizadas
+### Technologies Used
 
-- **Lenguaje**: Python 3.9
-- **Framework Web**: Flask 2.3.3
-- **Bibliotecas**:
-  - `requests` 2.31.0: Para realizar peticiones HTTP a la API
-  - `urllib.parse`: Para decodificar URLs
-  - `json`: Para manejar archivos JSON
-  - `os`: Para acceder a variables de entorno
-- **Contenedorización**: Docker y Docker Compose para despliegue
-- **Almacenamiento**: Archivo JSON (`folders.json`) para persistir las carpetas y asignaciones de máquinas
+- **Language**: Python 3.9
+- **Web Framework**: Flask 2.3.3
+- **Libraries**:
+  - `requests` 2.31.0: For making HTTP requests to the API
+  - `urllib.parse`: For URL decoding
+  - `json`: For handling JSON files
+  - `os`: For accessing environment variables
+- **Containerization**: Docker and Docker Compose for deployment
+- **Storage**: JSON file (`folders.json`) to persist folders and machine assignments
 
-### Estructura del Proyecto
+### Project Structure
 
 ```bash
 /home/kalista/isard/
-├── app.py                 # Archivo principal de la aplicación Flask
-├── requirements.txt       # Dependencias de Python
-├── Dockerfile             # Configuración para construir la imagen Docker
-├── docker-compose.yml     # Configuración para ejecutar el contenedor
-├── folders.json          # Archivo JSON con las carpetas y máquinas asignadas
-└── __pycache__/          # Archivos compilados de Python (generado automáticamente)
+├── app.py                 # Main Flask application file
+├── requirements.txt       # Python dependencies
+├── Dockerfile             # Docker image build configuration
+├── docker-compose.yml     # Container execution configuration
+├── folders.json          # JSON file with folders and assigned machines
+└── __pycache__/          # Compiled Python files (auto-generated)
 ```
 
-## 🚀 Quick Start con Docker
+## 🚀 Quick Start with Docker
 
-### Opción 1: Docker Hub (Recomendado)
+### Option 1: Docker Hub (Recommended)
 
 ```bash
 docker pull sasukeuni/isard-app:latest
 docker run -d -p 5000:5000 --name isard-app sasukeuni/isard-app:latest
 ```
 
-### Opción 2: Docker Compose
+### Option 2: Docker Compose
 
-Crea un archivo `docker-compose.yml`:
+Create a `docker-compose.yml` file:
 
 ```yaml
 services:
@@ -64,80 +64,80 @@ services:
     restart: unless-stopped
 ```
 
-Luego ejecuta:
+Then run:
 
 ```bash
 docker-compose up -d
 ```
 
-La aplicación estará disponible en `http://localhost:5000`
+The application will be available at `http://localhost:5000`
 
-## 📦 Instalación Local
+## 📦 Local Installation
 
-### Requisitos Previos
+### Prerequisites
 - Python 3.9+
 - pip
 
-### Pasos de Instalación
+### Installation Steps
 
-1. Clona el repositorio:
+1. Clone the repository:
 ```bash
 git clone https://github.com/tears-mysthrala/isard-webapp.git
 cd isard-webapp
 ```
 
-2. Instala las dependencias:
+2. Install dependencies:
 ```bash
 pip install -r requirements.txt
 ```
 
-3. Ejecuta la aplicación:
+3. Run the application:
 ```bash
 python app.py
 ```
 
-### Configuración
+### Configuration
 
-- **Puerto**: La aplicación expone el puerto 5000
-- **API Key**: La aplicación te pedirá tu API key de IsardVDI en el primer acceso
-- **Datos**: Los archivos `config.json` y `folders.json` se crean automáticamente para almacenar tu configuración
+- **Port**: The application exposes port 5000
+- **API Key**: The application will prompt you for your IsardVDI API key on first access
+- **Data**: The `config.json` and `folders.json` files are automatically created to store your configuration
 
-### Proceso de Desarrollo
+## 🛠️ Development Process
 
-El desarrollo de esta aplicación fue un proceso iterativo de prueba y error, marcado por la falta de documentación oficial y la necesidad de explorar directamente las capacidades de la API de IsardVDI. A continuación, se describe cómo se llegó al estado actual:
+The development of this application was an iterative trial-and-error process, marked by the lack of official documentation and the need to directly explore the capabilities of the IsardVDI API. Here's how we reached the current state:
 
-1. **Exploración Inicial de la API**: Comenzamos realizando queries básicas a la API (`https://cloud.uni.eus/api/v3`) para entender qué endpoints estaban disponibles. Usando herramientas como `curl` o scripts simples en Python con `requests`, probamos diferentes rutas y métodos HTTP para mapear las funcionalidades expuestas.
+1. **Initial API Exploration**: We started by making basic queries to the API (`https://cloud.uni.eus/api/v3`) to understand what endpoints were available. Using tools like `curl` or simple Python scripts with `requests`, we tested different routes and HTTP methods to map the exposed functionalities.
 
-2. **Investigación de Versiones**: No había documentación clara sobre qué versión de la API se estaba utilizando. A través de prueba y error, descubrimos que la versión v3 era la activa, probando diferentes paths como `/v1`, `/v2` y `/v3` hasta encontrar respuestas válidas. Esto implicó manejar errores 404 y 401 para identificar credenciales correctas y endpoints funcionales.
+2. **Version Research**: There was no clear documentation about which API version was being used. Through trial and error, we discovered that v3 was the active version, testing different paths like `/v1`, `/v2`, and `/v3` until finding valid responses. This involved handling 404 and 401 errors to identify correct credentials and functional endpoints.
 
-3. **Descifrado de Documentación Inexistente**: La documentación oficial era prácticamente inexistente o muy limitada. Para entender la estructura de las respuestas JSON y los parámetros requeridos, tuvimos que analizar directamente las respuestas de la API. Esto incluyó inspeccionar campos como `interfaces`, `guest_properties` y `ips` para extraer información relevante sobre las máquinas virtuales.
+3. **Deciphering Non-existent Documentation**: Official documentation was practically non-existent or very limited. To understand the structure of JSON responses and required parameters, we had to directly analyze the API responses. This included inspecting fields like `interfaces`, `guest_properties`, and `ips` to extract relevant information about virtual machines.
 
-4. **Investigación en GitLab**: Ante fallos persistentes (como errores de autenticación o datos incompletos), recurrimos al repositorio público de IsardVDI en GitLab. Exploramos el código fuente para entender cómo funcionaba internamente la API, qué campos se devolvían y cómo se estructuraban las peticiones. Esto nos permitió ajustar nuestros queries para obtener datos completos y manejar casos edge.
+4. **GitLab Research**: When facing persistent failures (like authentication errors or incomplete data), we turned to the public IsardVDI repository on GitLab. We explored the source code to understand how the API worked internally, what fields were returned, and how requests were structured. This allowed us to adjust our queries to obtain complete data and handle edge cases.
 
-5. **Iteraciones de Prueba y Error**: Cada nueva funcionalidad se implementó probando diferentes combinaciones de headers, parámetros y métodos. Por ejemplo:
-   - Probamos diferentes formatos de autenticación hasta encontrar que `Bearer {API_KEY}` funcionaba.
-   - Experimentamos con diferentes formas de parsear las IPs de las interfaces de red.
-   - Ajustamos el manejo de errores para casos donde la API devolvía datos inesperados.
+5. **Trial and Error Iterations**: Each new functionality was implemented by testing different combinations of headers, parameters, and methods. For example:
+   - We tested different authentication formats until finding that `Bearer {API_KEY}` worked.
+   - We experimented with different ways to parse IPs from network interfaces.
+   - We adjusted error handling for cases where the API returned unexpected data.
 
-6. **Optimización y Refinamiento**: Una vez que los queries básicos funcionaban, se agregó lógica para cachear datos, organizar en carpetas y construir la interfaz web. Cada paso involucró más pruebas para asegurar estabilidad.
+6. **Optimization and Refinement**: Once basic queries worked, we added logic to cache data, organize into folders, and build the web interface. Each step involved more testing to ensure stability.
 
-Este enfoque de desarrollo "hands-on" resultó en una aplicación funcional, pero destaca la importancia de una mejor documentación en proyectos de código abierto para facilitar el desarrollo de integraciones.
+This hands-on development approach resulted in a functional application, but highlights the importance of better documentation in open-source projects to facilitate integration development.
 
-## 🤝 Contribuciones
+## 🤝 Contributing
 
-Las contribuciones son bienvenidas. Si encuentras algún bug o tienes alguna sugerencia, por favor abre un issue.
+Contributions are welcome! If you find any bugs or have suggestions, please open an issue.
 
-## 👤 Autor
+## 👤 Author
 
 **Unai Urzainqui** ([@tears-mysthrala](https://github.com/tears-mysthrala))
-- Estudiante de Ciberseguridad
-- Universidad del País Vasco / Euskal Herriko Unibertsitatea
+- Cybersecurity Student
+- University of the Basque Country / Euskal Herriko Unibertsitatea
 
-## 📄 Licencia
+## 📄 License
 
-Este proyecto está bajo la licencia MIT. Consulta el archivo `LICENSE` para más detalles.
+This project is licensed under the MIT License. See the `LICENSE` file for more details.
 
-## 🔗 Enlaces
+## 🔗 Links
 
 - [Docker Hub](https://hub.docker.com/r/sasukeuni/isard-app)
 - [IsardVDI](https://isardvdi.com/)
@@ -145,4 +145,4 @@ Este proyecto está bajo la licencia MIT. Consulta el archivo `LICENSE` para má
 
 ---
 
-⭐ Si este proyecto te ha sido útil, considera darle una estrella en GitHub!
+⭐ If you find this project useful, consider giving it a star on GitHub!
