@@ -1,6 +1,13 @@
-# Proyecto Isard - Gestor de Máquinas Virtuales
+# 🖥️ IsardVDI Manager
 
-## Descripción del Proyecto
+[![Docker Hub](https://img.shields.io/badge/Docker%20Hub-sasukeuni%2Fisard--app-blue?logo=docker)](https://hub.docker.com/r/sasukeuni/isard-app)
+[![Python](https://img.shields.io/badge/Python-3.9-blue?logo=python)](https://www.python.org/)
+[![Flask](https://img.shields.io/badge/Flask-2.3.3-lightgrey?logo=flask)](https://flask.palletsprojects.com/)
+[![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
+
+Web application to manage and organize IsardVDI virtual machines with folder organization and Docker support.
+
+## 📋 Descripción del Proyecto
 
 Este proyecto es una aplicación web desarrollada en **Python** utilizando el framework **Flask**. Su propósito principal es gestionar y organizar máquinas virtuales (VMs) de IsardVDI, un sistema de virtualización basado en la nube. Creada por la alumna de ciberseguridad Unai Urzainqui, conocida en github como [tears-mysthrala](https://github.com/tears-mysthrala).
 
@@ -35,12 +42,65 @@ Este proyecto es una aplicación web desarrollada en **Python** utilizando el fr
 └── __pycache__/          # Archivos compilados de Python (generado automáticamente)
 ```
 
-### Configuración y Despliegue
+## 🚀 Quick Start con Docker
 
-1. **Variables de Entorno**: Requiere una variable `API_KEY` con el token de autenticación para la API de IsardVDI.
-2. **Archivo .env**: Se utiliza un archivo `.env` para configurar las variables de entorno (referenciado en `docker-compose.yml`).
-3. **Puerto**: La aplicación expone el puerto 5000.
-4. **Despliegue**: Se puede ejecutar localmente con `python app.py` o utilizando Docker Compose.
+### Opción 1: Docker Hub (Recomendado)
+
+```bash
+docker pull sasukeuni/isard-app:latest
+docker run -d -p 5000:5000 --name isard-app sasukeuni/isard-app:latest
+```
+
+### Opción 2: Docker Compose
+
+Crea un archivo `docker-compose.yml`:
+
+```yaml
+services:
+  isard-app:
+    image: sasukeuni/isard-app:latest
+    ports:
+      - "5000:5000"
+    restart: unless-stopped
+```
+
+Luego ejecuta:
+
+```bash
+docker-compose up -d
+```
+
+La aplicación estará disponible en `http://localhost:5000`
+
+## 📦 Instalación Local
+
+### Requisitos Previos
+- Python 3.9+
+- pip
+
+### Pasos de Instalación
+
+1. Clona el repositorio:
+```bash
+git clone https://github.com/tears-mysthrala/isard-webapp.git
+cd isard-webapp
+```
+
+2. Instala las dependencias:
+```bash
+pip install -r requirements.txt
+```
+
+3. Ejecuta la aplicación:
+```bash
+python app.py
+```
+
+### Configuración
+
+- **Puerto**: La aplicación expone el puerto 5000
+- **API Key**: La aplicación te pedirá tu API key de IsardVDI en el primer acceso
+- **Datos**: Los archivos `config.json` y `folders.json` se crean automáticamente para almacenar tu configuración
 
 ### Proceso de Desarrollo
 
@@ -62,3 +122,27 @@ El desarrollo de esta aplicación fue un proceso iterativo de prueba y error, ma
 6. **Optimización y Refinamiento**: Una vez que los queries básicos funcionaban, se agregó lógica para cachear datos, organizar en carpetas y construir la interfaz web. Cada paso involucró más pruebas para asegurar estabilidad.
 
 Este enfoque de desarrollo "hands-on" resultó en una aplicación funcional, pero destaca la importancia de una mejor documentación en proyectos de código abierto para facilitar el desarrollo de integraciones.
+
+## 🤝 Contribuciones
+
+Las contribuciones son bienvenidas. Si encuentras algún bug o tienes alguna sugerencia, por favor abre un issue.
+
+## 👤 Autor
+
+**Unai Urzainqui** ([@tears-mysthrala](https://github.com/tears-mysthrala))
+- Estudiante de Ciberseguridad
+- Universidad del País Vasco / Euskal Herriko Unibertsitatea
+
+## 📄 Licencia
+
+Este proyecto está bajo la licencia MIT. Consulta el archivo `LICENSE` para más detalles.
+
+## 🔗 Enlaces
+
+- [Docker Hub](https://hub.docker.com/r/sasukeuni/isard-app)
+- [IsardVDI](https://isardvdi.com/)
+- [IsardVDI GitLab](https://gitlab.com/isard/isardvdi)
+
+---
+
+⭐ Si este proyecto te ha sido útil, considera darle una estrella en GitHub!
