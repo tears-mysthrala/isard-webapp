@@ -1,76 +1,90 @@
 # 🖥️ IsardVDI Manager
 
-[![Docker Hub](https://img.shields.io/badge/Docker%20Hub-sasukeuni%2Fisard--app-blue?logo=docker)](https://hub.docker.com/r/sasukeuni/isard-app)
 [![Python](https://img.shields.io/badge/Python-3.9-blue?logo=python)](https://www.python.org/)
 [![Flask](https://img.shields.io/badge/Flask-3.1.2-lightgrey?logo=flask)](https://flask.palletsprojects.com/)
 [![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 
-Web application to manage and organize IsardVDI virtual machines with folder organization and Docker support.
+Unofficial web interface to manage and organize IsardVDI virtual machines, aimed at non-technical users.
+
+> **⚠️ Disclaimer:** This is a **personal, unofficial project**. It is **not affiliated with, endorsed by, or supported by the IsardVDI project** ([isardvdi.com](https://isardvdi.com/) / [GitLab](https://gitlab.com/isard/isardvdi)) nor by UPV/EHU. It simply consumes the public IsardVDI API with your own API key. Use it at your own risk.
 
 ## 📋 Project Description
 
-This project is a web application developed in **Python** using the **Flask** framework. Its main purpose is to manage and organize IsardVDI virtual machines (VMs), a cloud-based virtualization system. Created by cybersecurity student Unai Urzainqui, known on GitHub as [tears-mysthrala](https://github.com/tears-mysthrala).
+A small web application written in **Python** with the **Flask** framework. Its purpose is to give non-technical users a simple view of their IsardVDI desktops (start/stop, open console viewers) with folder-based organization. Maintained by [tears-mysthrala](https://github.com/tears-mysthrala).
 
-### Key Features
+### Supported operations
 
-- **VM Management**: The application connects to the IsardVDI API (`https://cloud.uni.eus/api/v3`) to retrieve the user's desktop list.
-- **Folder Organization**: Allows grouping VMs into custom folders, stored in a JSON file (`folders.json`).
-- **Web Interface**: Provides a web interface to visualize, organize, and manage virtual machines.
-- **VM Caching**: Maintains an in-memory cache of machines to optimize queries.
+Everything the app does goes through the IsardVDI API (`/api/v3`) using the API key you enter at login:
+
+- **Login / logout** with your personal IsardVDI API key. The key is validated against the API on login and kept in the Flask session — it is never written to disk by the application.
+- **List your desktops** with name, status and IP addresses (in-memory cache, no database).
+- **Start and stop desktops** (one click per machine).
+- **Open console viewers**: browser viewers (noVNC / SPICE web client / browser RDP) and downloadable connection files (`.vv` for virt-viewer, `.rdp` for RDP gateway/VPN), depending on what the API offers for each desktop.
+- **Folder organization**: create, rename and delete folders, and assign/unassign desktops to them. Folders are stored in a local `folders.json` file (git-ignored).
+- **JSON endpoints**: `/api/vms` (desktop/folder state for AJAX refresh) and `/api/viewers/<vm_id>` (which viewer types are available for a desktop).
+
+Anything not listed above (creating desktops, managing templates, users, quotas, etc.) is **not** supported — use the official IsardVDI web UI for that.
+
+### Error handling
+
+- **Invalid or expired API key** (API returns 401): the session key is discarded and you are redirected to the login page with an explanatory message.
+- **API unreachable or unexpected errors**: the dashboard shows an error banner instead of machine data; JSON endpoints return an error payload.
+- **Viewer not available for a desktop**: the app detects it and hides or disables that viewer option.
+- Folder file errors are logged to the console and the app starts with an empty folder set.
 
 ### Technologies Used
 
 - **Language**: Python 3.9
 - **Web Framework**: Flask 3.1.2
-- **Libraries**:
-  - `requests` 2.32.5: For making HTTP requests to the API
-  - `urllib.parse`: For URL decoding
-  - `json`: For handling JSON files
-  - `os`: For accessing environment variables
+- **Libraries**: `requests` 2.32.5 (HTTP calls to the API)
 - **Containerization**: Docker and Docker Compose for deployment
-- **Storage**: JSON file (`folders.json`) to persist folders and machine assignments
+- **Storage**: in-memory VM cache + `folders.json` for folder assignments
 
 ### Project Structure
 
-```bash
-/home/kalista/isard/
-├── app.py                 # Main Flask application file
+```text
+├── app.py                 # Main Flask application (routes + inline templates)
 ├── requirements.txt       # Python dependencies
 ├── Dockerfile             # Docker image build configuration
 ├── docker-compose.yml     # Container execution configuration
-├── folders.json          # JSON file with folders and assigned machines
-└── __pycache__/          # Compiled Python files (auto-generated)
+├── .env.example           # Example environment configuration (copy to .env)
+└── folders.json           # Runtime-generated folder data (git-ignored)
 ```
+
+## ⚙️ Configuration
+
+Configuration is read from environment variables. Copy `.env.example` to `.env` and adjust:
+
+| Variable | Default | Purpose |
+|----------|---------|---------|
+| `ISARD_API_BASE_URL` | `https://cloud.uni.eus/api/v3` | IsardVDI API base URL |
+| `SECRET_KEY` | random per start | Flask session signing key; set a fixed random value for stable sessions |
+| `PORT` | `5000` | Listening port |
+| `FLASK_DEBUG` | `false` | Flask debug mode — **never enable outside local development** |
+
+Docker Compose loads `.env` automatically (`env_file`). For local runs, export the variables yourself or load them with your shell (the app does not read `.env` files directly).
+
+Your **IsardVDI API key is not part of this configuration**: you enter it in the login form and it lives only in your session. Get it from your user profile on your IsardVDI instance.
 
 ## 🚀 Quick Start with Docker
 
-### Option 1: Docker Hub (Recommended)
+### Option 1: Docker Compose (recommended)
 
 ```bash
-docker pull sasukeuni/isard-app:latest
-docker run -d -p 5000:5000 --name isard-app sasukeuni/isard-app:latest
+cp .env.example .env   # then edit .env
+docker-compose up -d --build
 ```
 
-### Option 2: Docker Compose
-
-Create a `docker-compose.yml` file:
-
-```yaml
-services:
-  isard-app:
-    image: sasukeuni/isard-app:latest
-    ports:
-      - "5000:5000"
-    restart: unless-stopped
-```
-
-Then run:
+### Option 2: Plain Docker
 
 ```bash
-docker-compose up -d
+docker build -t isard-webapp .
+docker run -d -p 5000:5000 --env-file .env --name isard-app isard-webapp
 ```
 
 The application will be available at `http://localhost:5000`
+
+> Note: a historical prebuilt image (`sasukeuni/isard-app`) exists on Docker Hub, but it is not published or verified from this repository — prefer building from source as shown above.
 
 ## 📦 Local Installation
 
@@ -91,37 +105,36 @@ cd isard-webapp
 pip install -r requirements.txt
 ```
 
-3. Run the application:
+3. (Optional) configure environment:
+```bash
+cp .env.example .env
+# export the variables, e.g.: set -a; . ./.env; set +a
+```
+
+4. Run the application:
 ```bash
 python app.py
 ```
 
-### Configuration
-
-- **Port**: The application exposes port 5000
-- **API Key**: The application will prompt you for your IsardVDI API key on first access
-- **Data**: The `config.json` and `folders.json` files are automatically created to store your configuration
-
 ## 🛠️ Development Process
 
-The development of this application was an iterative trial-and-error process, marked by the lack of official documentation and the need to directly explore the capabilities of the IsardVDI API. Here's how we reached the current state:
+This application was built iteratively against the live IsardVDI API, in the absence of complete official API documentation:
 
-1. **Initial API Exploration**: We started by making basic queries to the API (`https://cloud.uni.eus/api/v3`) to understand what endpoints were available. Using tools like `curl` or simple Python scripts with `requests`, we tested different routes and HTTP methods to map the exposed functionalities.
+1. **Initial API exploration**: probing endpoints of `https://cloud.uni.eus/api/v3` with `curl` and small Python scripts to map available functionality.
+2. **Version research**: trial and error across `/v1`, `/v2` and `/v3` until finding the active version, handling 404/401 responses along the way.
+3. **Reading the source**: the public IsardVDI GitLab repository was the main reference for response structures (`interfaces`, `guest_properties`, `ips`, viewer payloads).
+4. **Iteration**: authentication format (`Bearer {API_KEY}`), IP parsing from network interfaces, and error handling for unexpected API responses were all refined through repeated testing.
+5. **Refinement**: in-memory caching, folder organization and the web UI were added on top of the working API calls.
 
-2. **Version Research**: There was no clear documentation about which API version was being used. Through trial and error, we discovered that v3 was the active version, testing different paths like `/v1`, `/v2`, and `/v3` until finding valid responses. This involved handling 404 and 401 errors to identify correct credentials and functional endpoints.
+This hands-on approach produced a functional application, but it also means behavior may break if the upstream API changes — there is no official contract to rely on.
 
-3. **Deciphering Non-existent Documentation**: Official documentation was practically non-existent or very limited. To understand the structure of JSON responses and required parameters, we had to directly analyze the API responses. This included inspecting fields like `interfaces`, `guest_properties`, and `ips` to extract relevant information about virtual machines.
+## 🔒 Security notes
 
-4. **GitLab Research**: When facing persistent failures (like authentication errors or incomplete data), we turned to the public IsardVDI repository on GitLab. We explored the source code to understand how the API worked internally, what fields were returned, and how requests were structured. This allowed us to adjust our queries to obtain complete data and handle edge cases.
-
-5. **Trial and Error Iterations**: Each new functionality was implemented by testing different combinations of headers, parameters, and methods. For example:
-   - We tested different authentication formats until finding that `Bearer {API_KEY}` worked.
-   - We experimented with different ways to parse IPs from network interfaces.
-   - We adjusted error handling for cases where the API returned unexpected data.
-
-6. **Optimization and Refinement**: Once basic queries worked, we added logic to cache data, organize into folders, and build the web interface. Each step involved more testing to ensure stability.
-
-This hands-on development approach resulted in a functional application, but highlights the importance of better documentation in open-source projects to facilitate integration development.
+- The IsardVDI API key is stored **only in the Flask session**. There is no "remember me" persistence: earlier versions stored a base64-encoded key in `config.json`; that was removed because base64 is encoding, not protection.
+- Note that Flask's default session is a **signed but not encrypted** client-side cookie: the API key is recoverable from the cookie value, so protect the cookie (and any logs or proxies that might capture it) like the key itself. Server-side session storage is on the roadmap.
+- Viewer responses may contain short-lived connection tokens; the app does not log them.
+- Do not expose this app directly to the internet: it has no user accounts of its own beyond the API-key session, and anyone who reaches it can drive the API with whatever key they enter.
+- If you previously cloned this repository, note that its history once contained a real API token. History has not been rewritten; treat that token as compromised (rotate/revoke it on the IsardVDI side if you haven't). Never commit `.env`, `config.json` or `folders.json`.
 
 ## 🤝 Contributing
 
@@ -129,9 +142,7 @@ Contributions are welcome! If you find any bugs or have suggestions, please open
 
 ## 👤 Author
 
-**Unai Urzainqui** ([@tears-mysthrala](https://github.com/tears-mysthrala))
-- Cybersecurity Student
-- University of the Basque Country / Euskal Herriko Unibertsitatea
+**[tears-mysthrala](https://github.com/tears-mysthrala)** — Founder / OT Cybersecurity Consultant
 
 ## 📄 License
 
@@ -139,7 +150,6 @@ This project is licensed under the MIT License. See the `LICENSE` file for more 
 
 ## 🔗 Links
 
-- [Docker Hub](https://hub.docker.com/r/sasukeuni/isard-app)
 - [IsardVDI](https://isardvdi.com/)
 - [IsardVDI GitLab](https://gitlab.com/isard/isardvdi)
 
