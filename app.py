@@ -7,8 +7,8 @@ from flask import Flask, render_template_string, redirect, url_for, flash, reque
 from functools import wraps
 
 # --- CONFIGURATION ---
-API_BASE_URL = "https://cloud.uni.eus/api/v3"
-CONFIG_FILE = "config.json"
+# Configuration is loaded from environment variables (see .env.example).
+API_BASE_URL = os.environ.get("ISARD_API_BASE_URL", "https://cloud.uni.eus/api/v3")
 
 MAQUINAS = {}  # Cache for VMs
 
@@ -17,24 +17,6 @@ FOLDERS_FILE = "folders.json"
 FOLDERS = {}  # { "folder_id": { "name": "Folder Name", "machines": ["vm_id1", "vm_id2"] } }
 
 # --- API KEY CONFIGURATION ---
-def load_config():
-    """Loads configuration (last API key used)."""
-    try:
-        if os.path.exists(CONFIG_FILE):
-            with open(CONFIG_FILE, "r") as f:
-                return json.load(f)
-    except Exception as e:
-        print(f"Error al cargar config: {e}")
-    return {}
-
-def save_config(config):
-    """Saves configuration."""
-    try:
-        with open(CONFIG_FILE, "w") as f:
-            json.dump(config, f)
-    except Exception as e:
-        print(f"Error al guardar config: {e}")
-
 def get_api_headers():
     """Gets API headers using the session API Key."""
     api_key = session.get('api_key')
@@ -119,7 +101,9 @@ load_folders()
 # --- FLASK APPLICATION ---
 
 app = Flask(__name__)
-app.secret_key = "super_secreto_isard"  # Key for flash messages
+# Secret key for sessions and flash messages. Set SECRET_KEY in the environment
+# for stable sessions across restarts; otherwise a random key is generated.
+app.secret_key = os.environ.get("SECRET_KEY") or os.urandom(32)
 
 # ==============================================================================
 # FUNCIONES DE API
@@ -203,8 +187,7 @@ def get_viewer_url(vm_id, viewer_type="browser-vnc"):
         response.raise_for_status()
         
         data = response.json()
-        print(f"DEBUG viewer response for {viewer_type}: {json.dumps(data, indent=2)}")
-        
+
         if isinstance(data, dict):
             # Handle file-type viewers (SPICE, RDP files)
             if data.get("kind") == "file":
@@ -1234,9 +1217,6 @@ LOGIN_TEMPLATE = """
             margin-top: 1.5rem;
             font-size: 0.9rem;
         }
-        .remember-box {
-            margin: 1rem 0;
-        }
     </style>
 </head>
 <body>
@@ -1263,17 +1243,8 @@ LOGIN_TEMPLATE = """
                 <label for="api_key" class="form-label"><i class="fas fa-key me-2"></i>API Key</label>
                 <div class="api-key-input">
                     <input type="password" class="form-control" id="api_key" name="api_key" 
-                           placeholder="Pega tu API Key de IsardVDI" required value="{{ saved_key or '' }}">
+                           placeholder="Pega tu API Key de IsardVDI" required>
                     <i class="fas fa-eye toggle-password" id="togglePassword"></i>
-                </div>
-            </div>
-
-            <div class="remember-box">
-                <div class="form-check">
-                    <input class="form-check-input" type="checkbox" id="remember" name="remember" {{ 'checked' if saved_key else '' }}>
-                    <label class="form-check-label" for="remember">
-                        Recordar API Key en este dispositivo
-                    </label>
                 </div>
             </div>
 
@@ -1320,8 +1291,7 @@ LOGIN_TEMPLATE = """
 def login():
     if request.method == "POST":
         api_key = request.form.get("api_key", "").strip()
-        remember = request.form.get("remember") == "on"
-        
+
         if not api_key:
             flash("Por favor ingresa una API Key", "danger")
             return redirect(url_for("login"))
@@ -1334,21 +1304,9 @@ def login():
             response = requests.get(test_url, headers=test_headers, timeout=10)
             response.raise_for_status()
             
-            # API key is valid, save it
+            # API key is valid, keep it only in the session
             session['api_key'] = api_key
-            
-            # Save to config if remember is checked
-            if remember:
-                config = load_config()
-                config['last_api_key'] = base64.b64encode(api_key.encode()).decode()
-                save_config(config)
-            else:
-                # Clear saved key if not remembering
-                config = load_config()
-                if 'last_api_key' in config:
-                    del config['last_api_key']
-                    save_config(config)
-            
+
             flash("Sesión iniciada correctamente", "success")
             return redirect(url_for("index"))
             
@@ -1363,15 +1321,7 @@ def login():
         return redirect(url_for("login"))
     
     # GET request - show login form
-    config = load_config()
-    saved_key = None
-    if 'last_api_key' in config:
-        try:
-            saved_key = base64.b64decode(config['last_api_key']).decode()
-        except Exception:
-            pass
-    
-    return render_template_string(LOGIN_TEMPLATE, saved_key=saved_key)
+    return render_template_string(LOGIN_TEMPLATE)
 
 
 @app.route("/logout")
@@ -1537,6 +1487,7 @@ def api_get_viewers(vm_id):
 
 @app.route("/debug/viewer/<vm_id>")
 @app.route("/debug/viewer/<vm_id>/<viewer_type>")
+@require_api_key
 def debug_viewer(vm_id, viewer_type="file-rdp"):
     """Debug endpoint para ver qué devuelve la API del viewer."""
     url = f"{API_BASE_URL}/desktop/{vm_id}/viewer/{viewer_type}"
@@ -1795,4 +1746,5 @@ def unassign_from_folder(vm_id):
 
 if __name__ == "__main__":
     print("Iniciando servicio...")
-    app.run(debug=True, host="0.0.0.0", port=5000)
+    debug = os.environ.get("FLASK_DEBUG", "").lower() in ("1", "true", "yes")
+    app.run(debug=debug, host="0.0.0.0", port=int(os.environ.get("PORT", "5000")))
