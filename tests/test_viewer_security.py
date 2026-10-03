@@ -40,12 +40,17 @@ class ViewerSecurityTests(unittest.TestCase):
                         self.assertNotIn("Location", response.headers)
 
     def test_preserves_same_origin_urls_and_relative_viewer_paths(self):
-        for value in (self.origin + "/viewer?token=synthetic#desktop", self.origin + ":443/viewer", "/viewer?token=synthetic"):
+        cases = (
+            (self.origin + "/viewer?token=synthetic#desktop", self.origin + "/viewer?token=synthetic#desktop"),
+            (self.origin + ":443/viewer", self.origin + "/viewer"),
+            ("/viewer?token=synthetic", self.origin + "/viewer?token=synthetic"),
+        )
+        for value, destination in cases:
             for payload in (value, {"type": "url", "url": value}):
                 with self.subTest(value=value, payload=payload):
                     response = self.viewer_response(payload)
                     self.assertEqual(response.status_code, 302)
-                    self.assertEqual(response.headers["Location"], self.origin + value if value.startswith("/") else value)
+                    self.assertEqual(response.headers["Location"], destination)
                     self.assertNotIn(b"<script>", response.data)
 
     def test_url_is_never_interpolated_into_a_script_or_custom_html(self):

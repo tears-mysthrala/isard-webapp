@@ -2,7 +2,7 @@ import os
 import json
 import requests
 import base64
-from urllib.parse import unquote, urlsplit, urljoin
+from urllib.parse import unquote, urlsplit, urljoin, urlunsplit
 from flask import Flask, render_template_string, redirect, url_for, flash, request, jsonify, Response, session
 from functools import wraps
 
@@ -43,7 +43,7 @@ def validated_viewer_url(value):
             except ValueError:
                 continue
             if origin == allowed_origin:
-                return value
+                return urlunsplit((configured.scheme, configured.netloc, parsed.path, parsed.query, parsed.fragment))
     except ValueError:
         return None
     return None
