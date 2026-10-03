@@ -58,6 +58,7 @@ Configuration is read from environment variables. Copy `.env.example` to `.env` 
 | Variable | Default | Purpose |
 |----------|---------|---------|
 | `ISARD_API_BASE_URL` | `https://cloud.uni.eus/api/v3` | IsardVDI API base URL |
+| `ISARD_VIEWER_ORIGINS` | empty | Extra allowed HTTP(S) viewer origins, separated by commas; include ports when needed |
 | `SECRET_KEY` | random per start | Flask session signing key; set a fixed random value for stable sessions |
 | `PORT` | `5000` | Listening port |
 | `FLASK_DEBUG` | `false` | Flask debug mode — **never enable outside local development** |

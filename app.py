@@ -2,13 +2,58 @@ import os
 import json
 import requests
 import base64
-from urllib.parse import unquote
+from urllib.parse import unquote, urlsplit, urljoin, urlunsplit
 from flask import Flask, render_template_string, redirect, url_for, flash, request, jsonify, Response, session
 from functools import wraps
 
 # --- CONFIGURATION ---
 # Configuration is loaded from environment variables (see .env.example).
 API_BASE_URL = os.environ.get("ISARD_API_BASE_URL", "https://cloud.uni.eus/api/v3")
+
+
+def validated_viewer_url(value):
+    """Accept viewer links only at operator-configured HTTP(S) origins."""
+    if not isinstance(value, str) or not value or "\\" in value:
+        return None
+    if any(ord(char) <= 32 or ord(char) == 127 for char in value):
+        return None
+    if value.startswith("/"):
+        if value.startswith("//"):
+            return None
+        value = urljoin(API_BASE_URL, value)
+    try:
+        parsed = urlsplit(value)
+        if parsed.scheme not in ("http", "https") or not parsed.hostname:
+            return None
+        if parsed.username is not None or parsed.password is not None:
+            return None
+        port = parsed.port if parsed.port is not None else (443 if parsed.scheme == "https" else 80)
+        origin = (parsed.scheme, parsed.hostname, port)
+        allowed = [API_BASE_URL]
+        allowed.extend(os.environ.get("ISARD_VIEWER_ORIGINS", "").split(","))
+        for entry in allowed:
+            try:
+                configured = urlsplit(entry.strip())
+                if configured.scheme not in ("http", "https") or not configured.hostname:
+                    continue
+                if configured.username is not None or configured.password is not None:
+                    continue
+                port = configured.port if configured.port is not None else (443 if configured.scheme == "https" else 80)
+                allowed_origin = (configured.scheme, configured.hostname, port)
+            except ValueError:
+                continue
+            if origin == allowed_origin:
+                return urlunsplit((configured.scheme, configured.netloc, parsed.path, parsed.query, parsed.fragment))
+    except ValueError:
+        return None
+    return None
+
+
+def redirect_to_viewer(value):
+    destination = validated_viewer_url(value)
+    if destination is None:
+        return jsonify({"error": "El visor devolvió un destino no permitido"}), 502
+    return redirect(destination)
 
 MAQUINAS = {}  # Cache for VMs
 
@@ -1504,7 +1549,8 @@ def debug_viewer(vm_id, viewer_type="file-rdp"):
             "url_called": url
         })
     except Exception as e:
-        return jsonify({"error": str(e), "url_called": url})
+        app.logger.warning("Viewer diagnostics failed (%s)", type(e).__name__)
+        return jsonify({"error": "No se pudo consultar el visor"}), 502
 
 
 @app.route("/viewer/<vm_id>")
@@ -1513,6 +1559,21 @@ def debug_viewer(vm_id, viewer_type="file-rdp"):
 def get_viewer(vm_id, viewer_type="browser-vnc"):
     """Obtiene la URL del visor y redirige o devuelve el archivo."""
     viewer_data = get_viewer_url(vm_id, viewer_type)
+    if isinstance(viewer_data, dict) and viewer_data.get("type") == "url":
+        destination = validated_viewer_url(viewer_data.get("url"))
+        if destination is None:
+            return jsonify({"error": "El visor devolvió un destino no permitido"}), 502
+        viewer_data = dict(viewer_data, url=destination)
+    elif isinstance(viewer_data, str) and not viewer_data.startswith("data:"):
+        viewer_data = validated_viewer_url(viewer_data)
+        if viewer_data is None:
+            return jsonify({"error": "El visor devolvió un destino no permitido"}), 502
+    elif isinstance(viewer_data, str):
+        media_type = viewer_data.split(",", 1)[0].split(";", 1)[0].lower()
+        if "," not in viewer_data or media_type not in (
+            "data:application/x-rdp", "data:application/x-virt-viewer", "data:text/plain"
+        ):
+            return jsonify({"error": "El visor devolvió un archivo inválido"}), 502
     
     if request.args.get("json"):
         if viewer_data:
@@ -1523,85 +1584,7 @@ def get_viewer(vm_id, viewer_type="browser-vnc"):
         # Handle our structured response
         if isinstance(viewer_data, dict):
             if viewer_data.get("type") == "url":
-                # For browser-vnc, we need to handle the cookie for WebSocket auth
-                if viewer_type == "browser-vnc":
-                    url = viewer_data["url"]
-                    # Get the cookie from the API response (it's in the raw response)
-                    # We'll fetch again to get the cookie
-                    try:
-                        api_url = f"{API_BASE_URL}/desktop/{vm_id}/viewer/{viewer_type}"
-                        headers = get_api_headers()
-                        if not headers:
-                            return redirect(url)
-                        response = requests.get(api_url, headers=headers)
-                        data = response.json()
-                        cookie_value = data.get("cookie", "")
-                        
-                        if cookie_value:
-                            # Create an HTML page that sets the cookie and redirects
-                            # The cookie must be set on cloud.uni.eus domain
-                            html = f'''<!DOCTYPE html>
-<html>
-<head>
-    <meta charset="UTF-8">
-    <title>Conectando al visor VNC...</title>
-    <style>
-        body {{
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            height: 100vh;
-            margin: 0;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            color: white;
-        }}
-        .container {{
-            text-align: center;
-            background: rgba(255,255,255,0.1);
-            padding: 40px;
-            border-radius: 15px;
-        }}
-        .spinner {{
-            border: 4px solid rgba(255,255,255,0.3);
-            border-radius: 50%;
-            border-top: 4px solid white;
-            width: 50px;
-            height: 50px;
-            animation: spin 1s linear infinite;
-            margin: 20px auto;
-        }}
-        @keyframes spin {{
-            0% {{ transform: rotate(0deg); }}
-            100% {{ transform: rotate(360deg); }}
-        }}
-        a {{
-            color: white;
-            text-decoration: underline;
-        }}
-    </style>
-</head>
-<body>
-    <div class="container">
-        <h2>Conectando al escritorio VNC...</h2>
-        <div class="spinner"></div>
-        <p>Si no se abre automáticamente, <a href="{url}" id="manual-link">haz clic aquí</a></p>
-    </div>
-    <script>
-        // Redirect immediately to the VNC viewer
-        // The cookie is set by the IsardVDI API when we make the request
-        window.location.href = "{url}";
-    </script>
-</body>
-</html>'''
-                            return Response(html, mimetype='text/html')
-                    except Exception as e:
-                        print(f"Error getting cookie: {e}")
-                    
-                    # Fallback: just redirect
-                    return redirect(url)
-                else:
-                    return redirect(viewer_data["url"])
+                return redirect_to_viewer(viewer_data.get("url"))
             elif viewer_data.get("type") == "rdp_file":
                 filename = viewer_data.get("filename", f"desktop-{vm_id}.rdp")
                 mime = viewer_data.get("mime", "application/x-rdp")
@@ -1641,12 +1624,12 @@ def get_viewer(vm_id, viewer_type="browser-vnc"):
                     headers={"Content-Disposition": f"attachment; filename={filename}"}
                 )
             except Exception as e:
-                print(f"Error parsing data URI: {e}")
-                return redirect(viewer_data)
+                app.logger.warning("Invalid viewer data URI (%s)", type(e).__name__)
+                return jsonify({"error": "El visor devolvió un archivo inválido"}), 502
         
         # Handle regular URL string
         elif isinstance(viewer_data, str):
-            return redirect(viewer_data)
+            return redirect_to_viewer(viewer_data)
     
     flash("No se pudo obtener la conexión al escritorio. Asegúrate de que la máquina esté encendida.", "danger")
     return redirect(url_for("index"))
